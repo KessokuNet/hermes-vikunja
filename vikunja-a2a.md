@@ -82,6 +82,9 @@ board; finished tasks already sit in **Done**.
 
 ## Working a task
 
+`task` in every tool is the numeric task id (45), never the identifier number a
+task shows as `#2` — `task: 2` updates task id 2, which is somebody else's task.
+
 1. `tasks_list` (or the filter from `filter_syntax`) for tasks that
    are not done and whose assignees include `bot-kita`.
 2. Comment on the task when you pick it up (`task_comments_create`, arguments

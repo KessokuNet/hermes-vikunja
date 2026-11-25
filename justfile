@@ -58,22 +58,32 @@ watch:
         find . -path ./.git -prune -o -path ./__pycache__ -prune -o -type f -printf '%T@ %s %p\n' 2>/dev/null | sort | sha256sum | cut -d' ' -f1
     }
     loaded() { sha256sum adapter.py __init__.py plugin.yaml 2>/dev/null | sha256sum | cut -d' ' -f1; }
+    # `hermes gateway restart` refuses while a turn is live and has no pending mode
+    # from a non-interactive shell, so a restart stays queued until one succeeds.
+    restart_pending=0
+    last_try=0
     echo "watching $PWD -> {{remote}}:{{remote_dir}} (ctrl-c to stop)"
     last_tree=$(tree)
     last_loaded=$(loaded)
     while sleep 2; do
         now=$(tree)
-        [ "$now" = "$last_tree" ] && continue
-        last_tree=$now
-        rsync -a --delete --exclude .git --exclude __pycache__ ./ {{remote}}:{{remote_dir}}/
-        echo "$(date +%H:%M:%S) synced"
-        now_loaded=$(loaded)
-        if [ "$now_loaded" != "$last_loaded" ]; then
-            last_loaded=$now_loaded
-            # The restart command waits for idle in the foreground, so run it
-            # detached: the loop keeps syncing while the gateway drains.
-            setsid ssh -o BatchMode=yes {{remote}} '~/.local/bin/hermes gateway restart' \
-                >/dev/null 2>&1 < /dev/null &
-            echo "$(date +%H:%M:%S) gateway restart requested (drains first)"
+        if [ "$now" != "$last_tree" ]; then
+            last_tree=$now
+            rsync -a --delete --exclude .git --exclude __pycache__ ./ {{remote}}:{{remote_dir}}/
+            echo "$(date +%H:%M:%S) synced"
+            now_loaded=$(loaded)
+            if [ "$now_loaded" != "$last_loaded" ]; then
+                last_loaded=$now_loaded
+                restart_pending=1
+            fi
+        fi
+        if [ "$restart_pending" = "1" ] && [ $(($(date +%s) - last_try)) -ge 30 ]; then
+            last_try=$(date +%s)
+            if ssh -o BatchMode=yes {{remote}} '~/.local/bin/hermes gateway restart' >/dev/null 2>&1; then
+                restart_pending=0
+                echo "$(date +%H:%M:%S) gateway restarted on the new code"
+            else
+                echo "$(date +%H:%M:%S) gateway busy — restart queued, retrying"
+            fi
         fi
     done

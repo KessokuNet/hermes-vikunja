@@ -56,6 +56,9 @@ PARENT_DESCRIPTION_CHARS = 2000
 PARENT_LOOKUP_DEPTH = 3
 # Safety net only: a ``project.updated`` delivery evicts the entry immediately.
 PROJECT_CACHE_SECONDS = 600
+# The bucket a picked-up task moves to, matched by title on the project's kanban view.
+DOING_BUCKET_NAMES = ("doing", "in progress", "in-progress", "wip")
+KANBAN_CACHE_SECONDS = 600
 # Only tags a Vikunja editor actually emits; anything else in angle brackets is
 # markdown (``<area>/<topic>``, ``<model>``) and must survive untouched.
 _HTML_HINT = re.compile(
@@ -141,6 +144,7 @@ class VikunjaAdapter(BasePlatformAdapter):
         self._runner: Any = None
         self._http: Any = None
         self._projects: dict[int, tuple[float, list[str]]] = {}
+        self._kanban: dict[int, tuple[float, int, int]] = {}
         self._dedup = MessageDeduplicator(max_size=1000, ttl_seconds=DEDUP_SECONDS)
     # -- lifecycle -------------------------------------------------------
 
@@ -291,6 +295,7 @@ class VikunjaAdapter(BasePlatformAdapter):
         # make the gateway read its own assignment as a message from itself.
         doer = _username(data.get("doer"))
         body = await self._assignment_prompt(task_id, data)
+        await self._move_to_doing(task, task_id)
         await self._submit(
             document,
             chat_id=f"task-{task_id}",
@@ -324,6 +329,7 @@ class VikunjaAdapter(BasePlatformAdapter):
                 author,
             )
             return "ignored:not-addressed"
+        await self._move_to_doing(task, task_id)
         await self._submit(
             document,
             chat_id=f"task-{task_id}",
@@ -342,6 +348,57 @@ class VikunjaAdapter(BasePlatformAdapter):
             f" (mentions {', '.join(sorted(mentioned))})" if mentioned else "",
         )
         return "comment"
+
+    async def _move_to_doing(self, task: dict, task_id: int) -> None:
+        """Card lifecycle: a task the bot has picked up belongs in Doing, not To-Do.
+
+        Vikunja only moves a card through
+        ``PUT /projects/{p}/views/{v}/buckets/{b}/tasks`` — the task update endpoint
+        accepts ``bucket_id`` and silently ignores it — and the route needs the
+        ``views_buckets_tasks_update`` permission on the token. Best effort: a failure
+        is logged and never blocks the turn.
+        """
+        try:
+            if task.get("done"):
+                return
+            project_id = int(task.get("project_id") or 0)
+            if project_id <= 0:
+                return
+            cached = self._kanban.get(project_id)
+            if not cached or cached[0] <= time.monotonic():
+                view_id, bucket_id = await self._resolve_doing_bucket(project_id)
+                if not view_id or not bucket_id:
+                    return
+                cached = (time.monotonic() + KANBAN_CACHE_SECONDS, view_id, bucket_id)
+                self._kanban[project_id] = cached
+            _, view_id, bucket_id = cached
+            path = f"/api/v2/projects/{project_id}/views/{view_id}/buckets/{bucket_id}/tasks"
+            moved = await self._api("PUT", path, {"task_id": task_id})
+            if moved is None:  # older builds register this route as POST
+                moved = await self._api("POST", path, {"task_id": task_id})
+            if moved is not None:
+                log.info("[vikunja] task %s in project %s moved to bucket %s", task_id, project_id, bucket_id)
+        except Exception:  # a card move must never cost the turn
+            log.warning("[vikunja] could not move task %s to Doing", task_id, exc_info=True)
+
+    async def _resolve_doing_bucket(self, project_id: int) -> tuple[int, int]:
+        """The project's kanban view and its Doing bucket, by title."""
+        views = await self._api("GET", f"/api/v2/projects/{project_id}/views") or {}
+        items = views.get("items") if isinstance(views, dict) else views
+        view_id = next((int(v["id"]) for v in items or [] if v.get("view_kind") == "kanban"), 0)
+        if not view_id:
+            return 0, 0
+        buckets = await self._api("GET", f"/api/v2/projects/{project_id}/views/{view_id}/buckets") or {}
+        bucket_items = buckets.get("items") if isinstance(buckets, dict) else buckets
+        bucket_id = next(
+            (
+                int(b["id"])
+                for b in bucket_items or []
+                if str(b.get("title") or "").strip().lower() in DOING_BUCKET_NAMES
+            ),
+            0,
+        )
+        return view_id, bucket_id
 
     def _mentions(self, text: str) -> set[str]:
         """Bot usernames the text pings, in any case: Vikunja mentions are plain text."""

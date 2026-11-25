@@ -48,6 +48,11 @@ MAX_BODY_BYTES = 1 << 20
 TASK_CHAT = re.compile(r"^task-(\d+)$")
 # Board state rides along with every turn; a long description is cut, not re-sent in full.
 CONTEXT_DESCRIPTION_CHARS = 2000
+# The thread a task already has, carried into the assignment turn: without it the
+# agent starts blind on a task people have been discussing for days.
+COMMENT_HISTORY_LIMIT = 15
+COMMENT_HISTORY_CHARS = 400
+COMMENT_HISTORY_TOTAL_CHARS = 4000
 # A board's description is where its rules live, so the ceiling is generous: one
 # infr-sized rules document (1 kB) plus room for the sections people append.
 PROJECT_DESCRIPTION_CHARS = 4000
@@ -566,13 +571,42 @@ class VikunjaAdapter(BasePlatformAdapter):
             parent_id = int(project.get("parent_project_id") or 0)
         return 0, {}
 
+    async def _comment_history(self, task_id: int) -> list[str]:
+        """The task's existing comments, oldest first, bounded in count and length."""
+        payload = await self._api("GET", f"/api/v2/tasks/{task_id}/comments?per_page=50") or {}
+        items = payload.get("items") if isinstance(payload, dict) else payload
+        comments = [c for c in (items or []) if _plain(c.get("comment") or "").strip()]
+        if not comments:
+            return []
+        lines: list[str] = []
+        budget = COMMENT_HISTORY_TOTAL_CHARS
+        for comment in reversed(comments):  # newest first, so the freshest survives the cap
+            body = _plain(comment.get("comment") or "").strip()
+            if len(body) > COMMENT_HISTORY_CHARS:
+                body = body[:COMMENT_HISTORY_CHARS].rstrip() + " …(cut)"
+            author = _username(comment.get("author")) or "unknown"
+            when = str(comment.get("created") or "")[:16].replace("T", " ")
+            entry = f"  @{author} {when}: " + body.replace("\n", "\n    ")
+            if len(entry) > budget or len(lines) >= COMMENT_HISTORY_LIMIT:
+                break
+            budget -= len(entry)
+            lines.append(entry)
+        lines.reverse()
+        if len(lines) < len(comments):
+            lines.insert(0, f"  ({len(comments) - len(lines)} earlier comment(s) not shown)")
+        return lines
+
     async def _assignment_prompt(self, task_id: int, data: dict) -> str:
-        """Task metadata plus the ask, for the turn that starts the work."""
+        """Task metadata, the thread so far, and the ask, for the turn that starts work."""
         task = await self._task(task_id, data)
         lines = [f'Assigned to you: {task.get("identifier") or ""} #{task_id} "{task.get("title", "")}"']
         lines.extend(self._header(task, task_id)[1:])
         lines.extend(await self._project_lines(task.get("project_id")))
         lines.extend(["", "description (markdown):", self._description(task)])
+        history = await self._comment_history(task_id)
+        if history:
+            lines.extend(["", "comments on this task so far (oldest first):"])
+            lines.extend(history)
         lines.extend([
             "",
             "Everything you write during this turn is posted to the task as a comment and the final "

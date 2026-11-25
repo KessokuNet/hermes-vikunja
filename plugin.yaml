@@ -1,0 +1,31 @@
+name: hermes-vikunja
+label: Vikunja board
+kind: platform
+version: 1.0.0
+description: >-
+  Treats every Vikunja task as a Hermes conversation: an assignment or a reply on
+  the task becomes a message in that task's chat, and the agent's answer is
+  posted back as a comment on the same task.
+author: cappy
+
+# The adapter reads these from the profile's .env or from platforms.vikunja.extra.
+requires_env:
+  - name: VIKUNJA_URL
+    description: Base URL of the Vikunja instance
+    prompt: "Vikunja URL"
+    password: false
+  - name: VIKUNJA_TOKEN
+    description: API token the adapter comments with
+    prompt: "API token"
+    password: true
+  - name: VIKUNJA_HOOK_SECRET
+    description: HMAC secret Vikunja signs webhook deliveries with
+    prompt: "Webhook secret"
+    password: true
+optional_env:
+  - name: VIKUNJA_LISTEN
+    description: "host:port the webhook listener binds inside the gateway"
+    password: false
+  - name: VIKUNJA_BOTS
+    description: Usernames whose comments are not forwarded back as new turns
+    password: false

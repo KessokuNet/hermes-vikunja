@@ -131,8 +131,28 @@ just validate         # hermes plugins validate on the installed directory
 hermes plugins enable hermes-vikunja
 ```
 
+`just install` also points `~/.hermes/vikunja-a2a.md` at the manual in this repo
+(`vikunja-a2a.md`), keeping the unversioned copy aside as a `.bak-*` file. The
+manual is the board's operating rules, read by the agent on every assignment, so
+it belongs in git next to the code that honours it.
+
 A code change needs a gateway restart; `hermes plugins enable` only re-wires
 handlers and leaves the live adapter (and its imported module) in place.
+
+## Development loop
+
+The gateway runs on cat and this checkout lives on kikuri:
+
+```bash
+just sync     # one-way rsync of the checkout onto the gateway host
+just deploy   # sync, then ask the gateway for a restart that waits for idle
+just watch    # poll the tree, sync every change, restart when adapter/__init__/plugin.yaml moved
+```
+
+`hermes-vikunja-sync.service` (a user unit on kikuri, `just watch` under systemd)
+runs the same loop continuously, so an edit is on cat about two seconds later and
+the gateway restarts between turns rather than under one. Stop it with
+`systemctl --user stop hermes-vikunja-sync` when a deployment has to stay still.
 
 ## Status
 
@@ -172,3 +192,5 @@ __init__.py   package entry point: from .adapter import register
 adapter.py    VikunjaAdapter + register()
 justfile      install / check / validate
 ```
+
+<!-- watch test -->

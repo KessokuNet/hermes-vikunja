@@ -520,8 +520,11 @@ class VikunjaAdapter(BasePlatformAdapter):
             "",
             "Everything you write during this turn is posted to the task as a comment and the final "
             "answer is the last one, so say what you are doing there in short progress notes and "
-            "skip the board's comment tool. Read ~/.hermes/vikunja-a2a.md for the board "
-            "conventions (project descriptions, relations, when to file and close).",
+            "skip the board's comment tool. Keep `percent_done` moving in the same rhythm with "
+            "`tasks_update` (`project_id`, `task`, `percent_done`): a first bump now that you have "
+            "picked this up, another after each material step, and `done` with 100 only when the "
+            "result is verified. Read ~/.hermes/vikunja-a2a.md for the board conventions (project "
+            "descriptions, relations, when to file and close).",
         ])
         return "\n".join(lines)
 
@@ -615,6 +618,10 @@ def register(ctx) -> None:
             "You are replying on a Vikunja task. Each task is its own conversation; your messages "
             "are posted to that task as comments, rendered from markdown to HTML. Write standard "
             "markdown — a blank line before a list, fenced code blocks with the language — and "
-            "treat the task description and comments as the record."
+            "treat the task description and comments as the record. Keep the task's fields honest "
+            "as the work moves: set `percent_done` with `tasks_update` when you pick it up and "
+            "after each material step, and set `done` (with `percent_done` 100) only once the "
+            "result is verified — comments are the narrative, the fields are the status, and a "
+            "task whose comments say finished but whose `percent_done` is 0 is still open."
         ),
     )

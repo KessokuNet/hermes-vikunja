@@ -1,7 +1,7 @@
 name: hermes-vikunja
 label: Vikunja board
 kind: platform
-version: 1.0.0
+version: 1.1.0
 description: >-
   Treats every Vikunja task as a Hermes conversation: an assignment or a reply on
   the task becomes a message in that task's chat, and the agent's answer is
@@ -24,8 +24,8 @@ requires_env:
     password: true
 optional_env:
   - name: VIKUNJA_LISTEN
-    description: "host:port the webhook listener binds inside the gateway"
+    description: "host:port the webhook listener binds inside the gateway (default 127.0.0.1:8790)"
     password: false
   - name: VIKUNJA_BOTS
-    description: Usernames whose comments are not forwarded back as new turns
+    description: Usernames whose own comments are not forwarded back as new turns
     password: false

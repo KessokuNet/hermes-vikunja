@@ -222,22 +222,27 @@ class VikunjaAdapter(BasePlatformAdapter):
     def _delivery_key(document: dict) -> str:
         """Identity of one logical event, for Vikunja's at-least-once retries.
 
-        The body hash is not enough: a retried delivery is re-marshalled with a fresh
-        ``time``, so the bytes differ while the event is the same. The id in the event
-        (comment id, assignee id) is stable across retries, and a genuine
-        remove-then-re-add of an assignee falls outside the dedupe window.
+        The body hash is not enough: the same event fans out to one delivery per
+        matching hook and the copies are re-marshalled with a fresh ``time``. So the
+        key is the event's own identity, and for an assignment that includes the
+        task's ``updated`` stamp: a retry of one delivery carries the same snapshot
+        and collapses, while an unassign-then-reassign produces a new stamp and
+        correctly starts a new turn (the same session).
         """
         event = str(document.get("event_name") or "")
         data = document.get("data") or {}
-        task = (data.get("task") or {}).get("id")
+        task = data.get("task") or {}
+        task_id = task.get("id")
         if event == "task.comment.created":
-            return f"{event}:{task}:{(data.get('comment') or {}).get('id')}"
+            return f"{event}:{task_id}:{(data.get('comment') or {}).get('id')}"
         if event.startswith("task.assignee"):
-            return f"{event}:{task}:{(data.get('assignee') or {}).get('id')}"
+            stamp = task.get("updated") or document.get("time", "")
+            assignee = data.get("assignee") or {}
+            return f"{event}:{task_id}:{assignee.get('id')}:{stamp}"
         if event.startswith("project."):
             # Every edit is a distinct cache bust, so the timestamp is part of the key.
             return f"{event}:{(data.get('project') or {}).get('id')}:{document.get('time', '')}"
-        return f"{event}:{task}"
+        return f"{event}:{task_id}"
 
     async def _on_webhook(self, request):
         from aiohttp import web

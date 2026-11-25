@@ -1,7 +1,7 @@
 name: hermes-vikunja
 label: Vikunja board
 kind: platform
-version: 1.1.0
+version: 1.2.0
 description: >-
   Treats every Vikunja task as a Hermes conversation: an assignment or a reply on
   the task becomes a message in that task's chat, and the agent's answer is

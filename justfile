@@ -47,7 +47,7 @@ deploy: sync
     #!/usr/bin/env bash
     set -euo pipefail
     ssh {{remote}} '~/.local/bin/hermes gateway restart' || true
-    echo "restart armed on {{remote}} — it serves normally until the current turn ends"
+    echo "restart finished on {{remote}}"
 
 # Push every save: sync always, restart the gateway when a file it loads changed.
 # Polls instead of using inotify so it needs nothing installed and survives reboots.
@@ -70,7 +70,10 @@ watch:
         now_loaded=$(loaded)
         if [ "$now_loaded" != "$last_loaded" ]; then
             last_loaded=$now_loaded
-            ssh {{remote}} '~/.local/bin/hermes gateway restart' >/dev/null 2>&1 || true
-            echo "$(date +%H:%M:%S) gateway restart armed (waits for idle)"
+            # The restart command waits for idle in the foreground, so run it
+            # detached: the loop keeps syncing while the gateway drains.
+            setsid ssh -o BatchMode=yes {{remote}} '~/.local/bin/hermes gateway restart' \
+                >/dev/null 2>&1 < /dev/null &
+            echo "$(date +%H:%M:%S) gateway restart requested (drains first)"
         fi
     done

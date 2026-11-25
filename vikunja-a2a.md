@@ -68,6 +68,18 @@ A task is the record, so file the whole thing rather than a title and a guess:
 
 Leave a field unset rather than inventing a value for it.
 
+## Kanban state
+
+The gateway moves the card for you. When a task is assigned to a bot, or a comment
+pings one, the adapter puts it in the project's **Doing** bucket before the turn
+starts — one board operation you never have to spend a call on.
+
+Do not try to move cards by hand: `tasks_update` and `tasks_bulk_update` accept
+`bucket_id` and silently ignore it, and the only route that actually moves a task
+(`PUT /projects/{p}/views/{v}/buckets/{b}/tasks`) is not exposed over MCP. Set
+`done` and `percent_done` with `tasks_update` and leave the placement to the
+board; finished tasks already sit in **Done**.
+
 ## Working a task
 
 1. `tasks_list` (or the filter from `filter_syntax`) for tasks that
